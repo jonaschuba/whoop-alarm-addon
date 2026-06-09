@@ -27,6 +27,10 @@ function loadConfig() {
     authToken: opts.auth_token || process.env.AUTH_TOKEN || "",
     timezone: opts.timezone || process.env.WHOOP_TIMEZONE || "Europe/Berlin",
     port: Number(opts.port || process.env.PORT || 9590),
+    // HA-Ueberwachung (Weg 2): Add-on liest diese Entitaeten selbst und synct zu WHOOP.
+    weckzeitEntity: opts.weckzeit_entity || process.env.WECKZEIT_ENTITY || "input_datetime.weckzeit",
+    alarmEntity: opts.alarm_entity || process.env.ALARM_ENTITY || "input_boolean.alarm",
+    pollInterval: Number(opts.poll_interval || process.env.POLL_INTERVAL || 30),
   };
 }
 
@@ -37,6 +41,10 @@ const PORT = CONFIG.port;
 const SEED_REFRESH_TOKEN = CONFIG.refreshToken;
 const AUTH_TOKEN = CONFIG.authToken;
 const PREFS = "/smart-alarm-service/v1/smartalarm/preferences";
+
+// Supervisor-Token: nur im HA-Add-on-Kontext vorhanden. Damit liest das Add-on
+// HA-Entitaeten ueber die Core-API (http://supervisor/core/api/...).
+const SUPERVISOR_TOKEN = process.env.SUPERVISOR_TOKEN || "";
 
 const store = new TokenStore(resolve(DATA_DIR, "tokens.json"));
 
@@ -132,9 +140,45 @@ const server = createServer(async (req, res) => {
   }
 });
 
+// --- HA-Ueberwachung (Weg 2) -------------------------------------------------
+// Liest eine HA-Entitaet ueber die Supervisor-Core-API.
+async function haGetState(entityId) {
+  const res = await fetch(`http://supervisor/core/api/states/${entityId}`, {
+    headers: { authorization: `Bearer ${SUPERVISOR_TOKEN}` },
+  });
+  if (!res.ok) throw new Error(`HA GET ${entityId} (${res.status})`);
+  return (await res.json()).state;
+}
+
+let lastSynced = null; // "HH:MM|true" - verhindert unnoetige WHOOP-Calls
+
+async function syncFromHa() {
+  try {
+    const rawTime = await haGetState(CONFIG.weckzeitEntity); // "07:00:00"
+    const rawAlarm = await haGetState(CONFIG.alarmEntity);   // "on"/"off"
+    if (!rawTime || rawTime === "unknown" || rawTime === "unavailable") return;
+    const time = rawTime.slice(0, 5);          // "07:00"
+    const enabled = rawAlarm === "on";
+    const key = `${time}|${enabled}`;
+    if (key === lastSynced) return;            // nichts geaendert
+    await setAlarm({ time, enabled });
+    lastSynced = key;
+    log(`HA-Sync: Wecker -> ${time}, an: ${enabled}`);
+  } catch (e) {
+    log("HA-Sync Fehler:", e.message);
+  }
+}
+
 server.listen(PORT, "0.0.0.0", () => {
   log(`WHOOP-Wecker-Add-on laeuft auf Port ${PORT}`);
   if (!SEED_REFRESH_TOKEN && !store.load()?.refreshToken) {
     log("Kein Refresh-Token! Bitte in den Add-on-Optionen 'whoop_refresh_token' setzen.");
+  }
+  if (SUPERVISOR_TOKEN) {
+    log(`HA-Ueberwachung aktiv: ${CONFIG.weckzeitEntity} + ${CONFIG.alarmEntity} alle ${CONFIG.pollInterval}s`);
+    syncFromHa(); // sofort beim Start
+    setInterval(syncFromHa, CONFIG.pollInterval * 1000);
+  } else {
+    log("Kein SUPERVISOR_TOKEN - HA-Ueberwachung aus (nur HTTP-API aktiv).");
   }
 });

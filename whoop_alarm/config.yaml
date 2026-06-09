@@ -1,5 +1,5 @@
 name: WHOOP Wecker Sync
-version: "1.0.0"
+version: "1.1.0"
 slug: whoop_alarm
 description: >-
   Synchronisiert die Home-Assistant-Weckzeit mit dem WHOOP Smart Alarm,
@@ -11,6 +11,7 @@ arch:
   - armv7
 init: false
 boot: auto
+homeassistant_api: true
 ports:
   9590/tcp: 9590
 ports_description:
@@ -19,7 +20,13 @@ options:
   whoop_refresh_token: ""
   timezone: Europe/Berlin
   auth_token: ""
+  weckzeit_entity: input_datetime.weckzeit
+  alarm_entity: input_boolean.alarm
+  poll_interval: 30
 schema:
   whoop_refresh_token: str
   timezone: str
   auth_token: str?
+  weckzeit_entity: str
+  alarm_entity: str
+  poll_interval: int
