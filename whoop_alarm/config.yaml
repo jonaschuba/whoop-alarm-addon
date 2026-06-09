@@ -1,0 +1,25 @@
+name: WHOOP Wecker Sync
+version: "1.0.0"
+slug: whoop_alarm
+description: >-
+  Synchronisiert die Home-Assistant-Weckzeit mit dem WHOOP Smart Alarm,
+  damit das WHOOP-Band morgens vibriert.
+url: https://github.com/jonaschuba/whoop-alarm-addon
+arch:
+  - aarch64
+  - amd64
+  - armv7
+init: false
+boot: auto
+ports:
+  9590/tcp: 9590
+ports_description:
+  9590/tcp: HTTP-API zum Setzen des Weckers (POST /set-alarm)
+options:
+  whoop_refresh_token: ""
+  timezone: Europe/Berlin
+  auth_token: ""
+schema:
+  whoop_refresh_token: str
+  timezone: str
+  auth_token: str?
